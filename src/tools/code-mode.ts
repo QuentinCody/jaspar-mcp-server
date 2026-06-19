@@ -35,6 +35,8 @@ export function registerCodeMode(
     // Register the execute tool (V8 isolate via DynamicWorkerExecutor)
     const executeTool = createExecuteTool({
         prefix: "jaspar",
+        // Verifiable provenance: jaspar_execute results carry a _meta.citation.
+        source: { id: "jaspar", name: "JASPAR", url: "https://jaspar.elixir.no" },
         catalog: jasparCatalog,
         apiFetch,
         doNamespace: env.JASPAR_DATA_DO,
