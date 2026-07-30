@@ -98,7 +98,7 @@ if (!fs.existsSync(path.join(SERVER_ROOT, 'src/tools/gene-lookup.ts'))) {
 if (index) {
   assertContains('src/index.ts', index, 'JasparDataDO', 'index.ts exports JasparDataDO');
   assertContains('src/index.ts', index, 'MyMCP', 'index.ts declares MyMCP');
-  assertContains('src/index.ts', index, 'McpAgent', 'index.ts imports McpAgent');
+  assertContains('src/index.ts', index, 'StatelessMcpWorker', 'index.ts imports StatelessMcpWorker');
   assertContains('src/index.ts', index, 'registerCodeMode', 'index.ts registers Code Mode tools');
   assertContains('src/index.ts', index, 'registerQueryData', 'index.ts registers query-data tool');
   assertContains('src/index.ts', index, 'registerGetSchema', 'index.ts registers get-schema tool');
