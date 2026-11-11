@@ -11,6 +11,9 @@
 
 import type { ApiFetchFn } from "@bio-mcp/shared/codemode/catalog";
 import { jasparFetch } from "./http";
+import { getReleaseMatrix } from "./release-file";
+import { prepareJasparRequest } from "./request";
+import { fail, object, readText } from "./response";
 
 /**
  * Create an ApiFetchFn that routes through the JASPAR REST API.
@@ -18,39 +21,42 @@ import { jasparFetch } from "./http";
  */
 export function createJasparApiFetch(): ApiFetchFn {
     return async (request) => {
-        // Defensively ensure JSON responses: DRF's browsable API defaults to HTML.
-        const params: Record<string, unknown> = { ...(request.params ?? {}) };
-        if (params.format === undefined) {
-            params.format = "json";
+        if (request.method !== "GET" || request.body !== undefined) fail("JASPAR supports GET reads only, without a body", 405);
+        if (request.path.startsWith("/release-files/")) {
+            return { status: 200, data: await getReleaseMatrix(request.path, request.params) };
         }
-
-        const response = await jasparFetch(request.path, params);
-
-        if (!response.ok) {
-            let errorBody: string;
-            try {
-                errorBody = await response.text();
-            } catch {
-                errorBody = response.statusText;
-            }
-            const error = new Error(
-                `HTTP ${response.status}: ${errorBody.slice(0, 200)}`,
-            ) as Error & {
-                status: number;
-                data: unknown;
-            };
-            error.status = response.status;
-            error.data = errorBody;
-            throw error;
-        }
-
+        const { path, params } = prepareJasparRequest(request.path, request.params);
+        const response = await jasparFetch(path, params);
+        const text = await readText(response);
+        const evidence = { response: text, http_status: response.status, content_type: response.headers.get("content-type"), path, params };
+        if (!response.ok) fail(`HTTP ${response.status} from JASPAR`, response.status, evidence);
         const contentType = response.headers.get("content-type") || "";
         if (!contentType.includes("json")) {
-            const text = await response.text();
+            if (params.format === "json") fail("Expected JSON from JASPAR; received a non-JSON response", 502, evidence);
             return { status: response.status, data: text };
         }
-
-        const data = await response.json();
+        let raw: unknown;
+        try { raw = JSON.parse(text); }
+        catch { fail("Invalid JSON from JASPAR", 502, evidence); }
+        const matrix = path.match(/^\/matrix\/((?:MA|UN)\d+\.\d+)\/$/);
+        const detail = path.match(/^\/dl\/(summary|model)\/([^/]+)\/$/);
+        if (matrix || detail) {
+            const data = object(raw);
+            const record = detail ? object(data[detail[1] === "summary" ? "profile_summary" : "model"]) : data;
+            const returned = detail ? `${record.base_id}.${record.version}` : record.matrix_id;
+            const requested = detail ? detail[2] : matrix?.[1];
+            if (returned !== requested) fail("JASPAR returned a different or unverified versioned identifier", 409, { ...evidence, resource: raw });
+        }
+        const data = path === "/dl/" ? normalizeDeepLearningPage(raw) : raw;
         return { status: response.status, data };
     };
+}
+
+/** Expose real profile rows to the shared staging/completeness engine. */
+function normalizeDeepLearningPage(data: unknown): unknown {
+    if (!data || typeof data !== "object" || !("results" in data)) return data;
+    const envelope = data.results;
+    if (!envelope || typeof envelope !== "object" || !("results" in envelope) || !Array.isArray(envelope.results)) return data;
+    const { results, ...profile_listing } = envelope;
+    return { ...data, results, profile_listing };
 }

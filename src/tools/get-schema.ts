@@ -1,6 +1,7 @@
 import type { McpServer } from "@bio-mcp/shared/mcp";
-import { z } from "zod";
 import { createGetSchemaHandler } from "@bio-mcp/shared/staging/utils";
+import { z } from "zod";
+import { jasparResponse } from "../lib/tool-result";
 
 interface SchemaEnv {
     JASPAR_DATA_DO?: unknown;
@@ -9,8 +10,8 @@ interface SchemaEnv {
 export function registerGetSchema(server: McpServer, env?: SchemaEnv): void {
     const handler = createGetSchemaHandler("JASPAR_DATA_DO", "jaspar");
 
-    server.registerTool(
-        "jaspar_get_schema",
+    for (const name of ["jaspar_get_schema", "mcp_jaspar_get_schema"]) server.registerTool(
+        name,
         {
             title: "Get Staged JASPAR Data Schema",
             description:
@@ -29,11 +30,11 @@ export function registerGetSchema(server: McpServer, env?: SchemaEnv): void {
         async (args, extra) => {
             const runtimeEnv =
                 env || (extra as { env?: SchemaEnv })?.env || {};
-            return handler(
+            return jasparResponse(() => handler(
                 args as Record<string, unknown>,
                 runtimeEnv as Record<string, unknown>,
                 (extra as Record<string, unknown>),
-            );
+            ), runtimeEnv, name, extra, args);
         },
     );
 }

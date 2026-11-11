@@ -10,13 +10,16 @@
  */
 
 import type { ApiCatalog } from "@bio-mcp/shared/codemode/catalog";
+import { deepLearningEndpoints, jasparWorkflows } from "./deep-learning";
+import { releaseFileEndpoint, releaseFileWorkflow } from "./release-file";
 
 export const jasparCatalog: ApiCatalog = {
     name: "JASPAR",
     baseUrl: "https://jaspar.elixir.no/api/v1",
     version: "2026 (release 11)",
     auth: "none",
-    endpointCount: 12,
+    endpointCount: 13 + deepLearningEndpoints.length,
+    workflows: [...jasparWorkflows, releaseFileWorkflow],
     notes:
         "- JASPAR stores curated TF binding profiles: PFMs (position frequency matrices), PWMs, and TFFMs\n" +
         "- All collection paths require a trailing slash (Django REST Framework convention)\n" +
@@ -25,7 +28,7 @@ export const jasparCatalog: ApiCatalog = {
         "- Use /matrix/{matrix_id}/ (with version suffix) to fetch full PFM data for one version\n" +
         "- Matrix listings support filters: collection (CORE, UNVALIDATED), tax_group (vertebrates,\n" +
         "  plants, insects, fungi, nematodes, urochordates, trematodes, diatoms, dictyostelium,\n" +
-        "  cnidaria, oomycota), tf_name, tf_class, tf_family, data_type (ChIP-seq, SELEX, PBM, etc.),\n" +
+        "  cnidaria, oomycota), name (legacy tf_name translated), tf_class, tf_family, data_type (ChIP-seq, SELEX, PBM, etc.),\n" +
         "  version=latest for only the newest version of each base_id\n" +
         "- DRF pagination: results come in {count, next, previous, results:[...]} envelope; use\n" +
         "  ?page=N and ?page_size=N (default 10, max per listing varies)\n" +
@@ -34,8 +37,12 @@ export const jasparCatalog: ApiCatalog = {
         "- TF class/family taxonomy is embedded IN each matrix record's 'class' and 'family'\n" +
         "  arrays; there is no standalone /tffamilies/ endpoint. Filter matrices with\n" +
         "  tf_class=... or tf_family=... to browse by family\n" +
+        "- Release metadata is not a snapshot. Only documented release query years 2020/2022 are accepted; 2020 currently errors upstream. Other years/numbers silently return current data and are rejected. Use versioned IDs or year-specific download artifacts.\n" +
+        "- Deep-learning discovery normalizes upstream results.results to results (listing metadata in profile_listing); preserve model versions, cell/experiment context and distinguish signed CWM from PFM counts. HDF5 downloads and inMOTIFin execution are external.\n" +
         "- Out of scope: sequence scanning / motif hit discovery (separate EBI service)",
     endpoints: [
+        releaseFileEndpoint,
+        ...deepLearningEndpoints,
         // === Matrices (the core resource) ===
         {
             method: "GET",
@@ -50,12 +57,13 @@ export const jasparCatalog: ApiCatalog = {
                 { name: "collection", type: "string", required: false, description: "Collection name (CORE, UNVALIDATED)" },
                 { name: "tax_group", type: "string", required: false, description: "Taxonomic group (vertebrates, plants, insects, fungi, nematodes, urochordates, trematodes, diatoms, dictyostelium, cnidaria, oomycota)" },
                 { name: "tax_id", type: "string", required: false, description: "NCBI taxonomy ID (e.g. 9606 for human)" },
-                { name: "tf_name", type: "string", required: false, description: "Transcription factor name (e.g. Runx1)" },
+                { name: "name", type: "string", required: false, description: "Case-sensitive transcription factor name (e.g. ARNT2); legacy tf_name is translated" },
+                { name: "tf_name", type: "string", required: false, description: "Compatibility alias translated to name; conflicting values are rejected" },
                 { name: "tf_class", type: "string", required: false, description: "TF class (e.g. 'Runt domain factors')" },
                 { name: "tf_family", type: "string", required: false, description: "TF family (e.g. 'Runt-related factors')" },
                 { name: "data_type", type: "string", required: false, description: "Experimental data type (ChIP-seq, SELEX, PBM, HT-SELEX, DAP-seq, etc.)" },
                 { name: "version", type: "string", required: false, description: "Pass 'latest' to return only the most recent version of each base_id" },
-                { name: "release", type: "string", required: false, description: "Restrict to a specific JASPAR release number" },
+                { name: "release", type: "string", required: false, description: "Historical year, not release number. 2020 currently errors upstream; omit for current data.", enum: ["2020", "2022"] },
                 { name: "search", type: "string", required: false, description: "Free-text search across matrix metadata" },
                 { name: "page", type: "number", required: false, description: "Page number (1-indexed)" },
                 { name: "page_size", type: "number", required: false, description: "Results per page" },
@@ -126,7 +134,8 @@ export const jasparCatalog: ApiCatalog = {
             ],
             queryParams: [
                 { name: "tax_group", type: "string", required: false, description: "Taxonomic group filter" },
-                { name: "tf_name", type: "string", required: false, description: "Transcription factor name filter" },
+                { name: "name", type: "string", required: false, description: "Case-sensitive transcription factor name; legacy tf_name is translated" },
+                { name: "tf_name", type: "string", required: false, description: "Compatibility alias translated to name; filtered collections route through /matrix/" },
                 { name: "page", type: "number", required: false, description: "Page number" },
                 { name: "page_size", type: "number", required: false, description: "Results per page" },
             ],
@@ -205,7 +214,7 @@ export const jasparCatalog: ApiCatalog = {
             path: "/releases/{release_number}/",
             summary:
                 "Get detail for a single JASPAR release, including the citation text, DOI, and" +
-                " PubMed reference. Use to pin analyses to a specific database snapshot.",
+                " PubMed reference. This is citation metadata, not a pinned database snapshot.",
             category: "versions",
             pathParams: [
                 {
