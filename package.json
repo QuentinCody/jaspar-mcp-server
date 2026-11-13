@@ -10,7 +10,7 @@
     "lint": "biome lint --diagnostic-level=error src/",
     "type-check": "npm run cf-typegen && tsc --noEmit",
     "test:regression": "node test/structured-content-regression.mjs",
-    "build": "npm run type-check",
+    "build": "npm run cf-typegen && tsc --noEmit -p tsconfig.build.json",
     "test": "npm run type-check && npm run test:regression"
   },
   "dependencies": {
